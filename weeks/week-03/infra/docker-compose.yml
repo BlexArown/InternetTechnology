@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  photos-svc-s07:
+    build: ../services/photos-svc-s07
+    container_name: photos-svc-s07
+    expose:
+      - "8255"
+
+  other-svc-s07:
+    build: ../services/other-svc-s07
+    container_name: other-svc-s07
+    expose:
+      - "8256"
+
+  nginx:
+    image: nginx:latest
+    container_name: gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - photos-svc-s07
+      - other-svc-s07
