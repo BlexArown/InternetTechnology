@@ -1,0 +1,32 @@
+# weeks/week-05/app/schema.graphql
+
+"""
+Review — объект отзыва.
+"""
+type Review {
+  id: ID!
+  rating: Int!
+}
+
+type Query {
+  """
+  Получить список отзывов
+  """
+  reviews: [Review!]!
+
+  """
+  Получить один отзыв по id
+  """
+  review(id: ID!): Review
+}
+
+input CreateReviewInput {
+  rating: Int!
+}
+
+type Mutation {
+  """
+  Создать новый отзыв
+  """
+  createReview(input: CreateReviewInput!): Review!
+}
