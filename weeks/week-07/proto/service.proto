@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package bookings.v1;
+
+service BookingsService {
+  rpc GetBooking (GetBookingRequest) returns (GetBookingResponse);
+}
+
+message GetBookingRequest {
+  string id = 1;
+}
+
+message GetBookingResponse {
+  string id = 1;
+  string result = 2;
+}

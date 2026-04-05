@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>messages-s07 - WebRTC Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+
+    h1 {
+      margin-bottom: 10px;
+    }
+
+    .row {
+      margin-bottom: 12px;
+    }
+
+    input, button, textarea {
+      font-size: 16px;
+      padding: 8px;
+      margin-right: 8px;
+    }
+
+    #log {
+      width: 100%;
+      height: 250px;
+      resize: none;
+    }
+
+    #messageInput {
+      width: 70%;
+    }
+
+    .status {
+      padding: 10px;
+      background: #f3f3f3;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebRTC P2P Chat — messages-s07</h1>
+
+  <div class="status">
+    <div><strong>Signaling:</strong> <span id="wsStatus">disconnected</span></div>
+    <div><strong>Peer:</strong> <span id="pcStatus">new</span></div>
+    <div><strong>Channel:</strong> <span id="dcStatus">closed</span></div>
+  </div>
+
+  <div class="row">
+    <button id="connectBtn">Подключиться к signaling</button>
+    <button id="startBtn">Создать соединение (offer)</button>
+  </div>
+
+  <div class="row">
+    <input id="messageInput" type="text" placeholder="Введите сообщение" />
+    <button id="sendBtn">Отправить</button>
+  </div>
+
+  <div class="row">
+    <textarea id="log" readonly></textarea>
+  </div>
+
+  <script>
+    const wsStatus = document.getElementById("wsStatus");
+    const pcStatus = document.getElementById("pcStatus");
+    const dcStatus = document.getElementById("dcStatus");
+    const logArea = document.getElementById("log");
+    const messageInput = document.getElementById("messageInput");
+
+    const connectBtn = document.getElementById("connectBtn");
+    const startBtn = document.getElementById("startBtn");
+    const sendBtn = document.getElementById("sendBtn");
+
+    let ws = null;
+    let pc = null;
+    let dataChannel = null;
+    let isOfferer = false;
+
+    function log(message) {
+      logArea.value += message + "\n";
+      logArea.scrollTop = logArea.scrollHeight;
+      console.log(message);
+    }
+
+    function updateStatuses() {
+      wsStatus.textContent = ws && ws.readyState === WebSocket.OPEN ? "connected" : "disconnected";
+      pcStatus.textContent = pc ? pc.connectionState : "new";
+      dcStatus.textContent = dataChannel ? dataChannel.readyState : "closed";
+    }
+
+    function createPeerConnection() {
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" }
+        ]
+      });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "ice-candidate",
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        updateStatuses();
+        log("Peer state: " + pc.connectionState);
+      };
+
+      pc.ondatachannel = (event) => {
+        log("Получен входящий DataChannel");
+        dataChannel = event.channel;
+        setupDataChannel();
+      };
+
+      updateStatuses();
+    }
+
+    function setupDataChannel() {
+      if (!dataChannel) return;
+
+      dataChannel.onopen = () => {
+        updateStatuses();
+        log("DataChannel открыт");
+      };
+
+      dataChannel.onclose = () => {
+        updateStatuses();
+        log("DataChannel закрыт");
+      };
+
+      dataChannel.onmessage = (event) => {
+        log("Собеседник: " + event.data);
+      };
+
+      updateStatuses();
+    }
+
+    function connectWebSocket() {
+      ws = new WebSocket("ws://localhost:8765");
+
+      ws.onopen = () => {
+        updateStatuses();
+        log("Подключено к signaling серверу");
+      };
+
+      ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+        log("Получен signaling message: " + data.type);
+
+        if (!pc) {
+          createPeerConnection();
+        }
+
+        if (data.type === "offer") {
+          isOfferer = false;
+
+          if (!dataChannel) {
+            // У принимающей стороны data channel придет через ondatachannel
+          }
+
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          ws.send(JSON.stringify({
+            type: "answer",
+            answer: pc.localDescription
+          }));
+
+          log("Answer отправлен");
+        }
+
+        else if (data.type === "answer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          log("Answer принят");
+        }
+
+        else if (data.type === "ice-candidate") {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            log("ICE candidate добавлен");
+          } catch (err) {
+            log("Ошибка ICE candidate: " + err);
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        updateStatuses();
+        log("Отключено от signaling сервера");
+      };
+
+      ws.onerror = (err) => {
+        log("WebSocket error");
+        console.error(err);
+      };
+    }
+
+    async function startConnection() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log("Сначала подключись к signaling серверу");
+        return;
+      }
+
+      if (!pc) {
+        createPeerConnection();
+      }
+
+      isOfferer = true;
+
+      if (!dataChannel) {
+        dataChannel = pc.createDataChannel("chat");
+        setupDataChannel();
+      }
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      ws.send(JSON.stringify({
+        type: "offer",
+        offer: pc.localDescription
+      }));
+
+      log("Offer отправлен");
+    }
+
+    function sendMessage() {
+      const text = messageInput.value.trim();
+
+      if (!text) {
+        return;
+      }
+
+      if (!dataChannel || dataChannel.readyState !== "open") {
+        log("DataChannel еще не открыт");
+        return;
+      }
+
+      dataChannel.send(text);
+      log("Вы: " + text);
+      messageInput.value = "";
+    }
+
+    connectBtn.addEventListener("click", connectWebSocket);
+    startBtn.addEventListener("click", startConnection);
+    sendBtn.addEventListener("click", sendMessage);
+
+    messageInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        sendMessage();
+      }
+    });
+
+    updateStatuses();
+  </script>
+</body>
+</html>
