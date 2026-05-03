@@ -1,0 +1,17 @@
+replicaCount: 1
+
+image:
+  repository: reviews-app
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8109
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "100m"
+  limits:
+    memory: "128Mi"
+    cpu: "250m"
