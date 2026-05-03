@@ -1,6 +1,0 @@
-apiVersion: v2
-name: reviews-app
-description: Helm chart for reviews-svc-s07
-type: application
-version: 0.1.0
-appVersion: "1.0"
