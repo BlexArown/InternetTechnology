@@ -1,1 +1,1 @@
-# InternetTechnology
+# InternetTechnology 2 semestr
